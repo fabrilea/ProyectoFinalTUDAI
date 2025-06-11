@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/contenedorPrincipal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <EditText
+            android:id="@+id/inputNombreCliente"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Nombre del cliente"
+            android:inputType="textPersonName" />
+
+        <EditText
+            android:id="@+id/inputNumeroCliente"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Número de contacto"
+            android:inputType="phone"
+            android:layout_marginTop="8dp" />
+
+        <Button
+            android:id="@+id/btnAgregarProductosDelivery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Agregar productos"
+            android:layout_marginTop="16dp" />
+
+        <TextView
+            android:id="@+id/txtResumenDelivery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Total: $0"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:id="@+id/listaResumenDelivery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="8dp" />
+
+        <Button
+            android:id="@+id/btnConfirmarDelivery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Confirmar pedido"
+            android:layout_marginTop="16dp" />
+
+        <Button
+            android:id="@+id/btnVerDeliveriesAnteriores"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ver deliveries anteriores"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+</ScrollView>

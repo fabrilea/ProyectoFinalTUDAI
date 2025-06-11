@@ -1,0 +1,56 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <!-- Categorías -->
+    <Spinner
+        android:id="@+id/spinnerCategoria"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+    <!-- Lista de productos -->
+    <ListView
+        android:id="@+id/listaProductos"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+
+
+    <TextView
+        android:id="@+id/tituloSeleccionados"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Productos seleccionados"
+        android:textStyle="bold"
+        android:paddingTop="16dp"
+        android:textSize="16sp"/>
+
+    <LinearLayout
+        android:id="@+id/contenedorSeleccionados"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="8dp" />
+
+    <!-- Total -->
+    <TextView
+        android:id="@+id/totalPedido"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Total: $0"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <!-- Confirmar pedido -->
+    <Button
+        android:id="@+id/btnConfirmarPedido"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Confirmar Pedido" />
+
+</LinearLayout>
+
+

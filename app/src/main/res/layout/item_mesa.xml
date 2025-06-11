@@ -1,0 +1,37 @@
+<androidx.cardview.widget.CardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/cardMesa"
+    android:layout_width="160dp"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardElevation="6dp"
+    app:cardCornerRadius="12dp"
+    android:clickable="true"
+    android:focusable="true">
+
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="10dp"
+        android:background="?android:selectableItemBackground">
+
+        <ImageView
+            android:layout_width="48dp"
+            android:layout_height="65dp"
+            android:contentDescription="@string/mesa_x"
+            android:src="@drawable/mesa" />
+
+        <TextView
+            android:id="@+id/txtMesa"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/black"
+            android:text="@string/mesa_x"
+            android:textSize="16sp"
+            android:layout_marginTop="4dp"/>
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

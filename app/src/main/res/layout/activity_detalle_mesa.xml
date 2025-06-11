@@ -1,0 +1,65 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/txtDetallePedido"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp"
+        android:text="Pedido:"
+        android:textSize="16sp"
+        />
+
+    <LinearLayout
+        android:id="@+id/listaPedidos"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:textAlignment="textStart"
+        android:paddingTop="8dp"
+        android:layout_marginRight="10dp"
+        android:layout_marginLeft="10dp"
+        android:paddingBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnReimprimirComanda"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Reimprimir Comanda"
+        android:visibility="invisible"
+        android:layout_marginTop="12dp" />
+
+
+    <TextView
+        android:id="@+id/txtDetalleMesa"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Detalles"
+        android:textSize="22sp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/txtEstadoMesa"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Estado: Libre"
+        android:textSize="22sp"
+        android:layout_marginBottom="24dp" />
+
+    <Button
+        android:id="@+id/btnAgregarPedido"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hacer pedido"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnCerrarCuenta"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Cerrar cuenta" />
+</LinearLayout>
