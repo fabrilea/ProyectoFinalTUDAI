@@ -3,6 +3,9 @@ package com.example.sistemadecomandas
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintManager
 import android.view.View
 import android.widget.*
 import androidx.activity.result.ActivityResultLauncher
@@ -11,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.example.sistemadecomandas.model.Pedido
+import com.example.sistemadecomandas.printer.PdfPrintAdapter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -41,7 +45,7 @@ class DeliveryActivity : AppCompatActivity() {
 
         resultadoPedido = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-                val json = result.data?.getStringExtra("pedidos_json")
+                val json = result.data?.getStringExtra("delivery_json") // ← CAMBIO AQUÍ
                 if (!json.isNullOrEmpty()) {
                     val nuevos = com.google.gson.Gson().fromJson(json, Array<Pedido>::class.java).toList()
                     for (p in nuevos) {
@@ -57,10 +61,11 @@ class DeliveryActivity : AppCompatActivity() {
             }
         }
 
+
         btnAgregarProductos.setOnClickListener {
             val intent = Intent(this, PedidoActivity::class.java)
-            intent.putExtra("mesa", "Delivery")
-            intent.putExtra("ocupada", true)
+            intent.putExtra("es_delivery", true)
+            intent.putExtra("mesa", "Delivery") // o algún valor simbólico
             resultadoPedido.launch(intent)
         }
 
@@ -93,31 +98,24 @@ class DeliveryActivity : AppCompatActivity() {
             return
         }
 
-        val metodos = arrayOf("Efectivo", "Tarjeta de crédito", "Tarjeta de débito", "Transferencia")
-        AlertDialog.Builder(this)
-            .setTitle("Método de pago")
-            .setItems(metodos) { _, i ->
-                val metodo = metodos[i]
-                val resumen = StringBuilder("DELIVERY - $nombre\nTel: $numero\nMétodo: $metodo\n\n")
-                var total = 0
-                for (p in pedidos) {
-                    val subtotal = p.precio * p.cantidad
-                    resumen.append("${p.nombre} x${p.cantidad} = $${subtotal}\n")
-                    total += subtotal
-                }
-                resumen.append("\nTOTAL: $${total}")
+        val resumen = StringBuilder("DELIVERY - $nombre\nTel: $numero\n\n")
+        var total = 0
+        for (p in pedidos) {
+            val subtotal = p.precio * p.cantidad
+            resumen.append("${p.nombre} x${p.cantidad} = $${subtotal}\n")
+            total += subtotal
+        }
+        resumen.append("\nTOTAL: $${total}")
 
-                guardarDeliveryEnResumen(total)
-                generarPDFDelivery(resumen.toString(), nombre)
+        guardarDeliveryEnResumen(total)
+        generarPDFDelivery(resumen.toString(), nombre)
 
-                getSharedPreferences("estado_deliveries", MODE_PRIVATE)
-                    .edit().putBoolean("hay_deliveries", true).apply()
+        getSharedPreferences("estado_deliveries", MODE_PRIVATE)
+            .edit().putBoolean("hay_deliveries", true).apply()
 
-                Toast.makeText(this, "Delivery registrado", Toast.LENGTH_SHORT).show()
-                finish()
-            }
-            .show()
+        Toast.makeText(this, "Delivery registrado", Toast.LENGTH_SHORT).show()
     }
+
 
     private fun guardarDeliveryEnResumen(total: Int) {
         val prefs = getSharedPreferences("resumen_dia", MODE_PRIVATE)
@@ -157,17 +155,32 @@ class DeliveryActivity : AppCompatActivity() {
         existingSet.add(deliveryString)
         prefs.edit().putStringSet("historial", existingSet).apply()
 
-        // 🔹 Abrir PDF
+        abrirPDF(file)
+    }
+
+    private fun abrirPDF(file : File){
+        if (!file.exists()) {
+            Toast.makeText(this, "El archivo no existe", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/pdf")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "No se pudo abrir el PDF", Toast.LENGTH_SHORT).show()
-        }
+
+        val printManager = getSystemService(PRINT_SERVICE) as PrintManager
+        val printAdapter: PrintDocumentAdapter = PdfPrintAdapter(this, uri)
+
+        val printJob = printManager.print("Comanda o Factura", printAdapter, PrintAttributes.Builder().build())
+
+        // Monitorear estado de impresión para cerrar la actividad SOLO cuando se complete o falle
+        Thread {
+            while (!printJob.isCompleted && !printJob.isCancelled && !printJob.isFailed) {
+                Thread.sleep(500)
+            }
+
+            runOnUiThread {
+                finish() // Se cierra después de que el usuario imprima o salga del diálogo
+            }
+        }.start()
     }
 
 
@@ -185,16 +198,8 @@ class DeliveryActivity : AppCompatActivity() {
             .setTitle("Deliveries anteriores")
             .setItems(nombres.toTypedArray()) { _, index ->
                 val file = deliveries[index]
-                val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/pdf")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                try {
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "No se pudo abrir el PDF", Toast.LENGTH_SHORT).show()
-                }
+                abrirPDF(file)
+
             }
             .show()
     }

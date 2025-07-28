@@ -3,7 +3,6 @@ package com.example.sistemadecomandas
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.widget.Button
 import android.widget.GridLayout
 import android.widget.TextView
 import androidx.activity.result.ActivityResultLauncher
@@ -43,9 +42,14 @@ class PantallaPrincipal : AppCompatActivity() {
 
                 estadosMesas[nombreMesa] = ocupada
                 mesaStateManager.guardarEstado(nombreMesa, ocupada)
+
+
+                RegistroPagos.cargarDesdePreferencias(this)
+
                 actualizarColoresMesas()
             }
         }
+
 
         estadosMesas.putAll(mesaStateManager.obtenerTodosLosEstados())
         RegistroPagos.cargarDesdePreferencias(this)

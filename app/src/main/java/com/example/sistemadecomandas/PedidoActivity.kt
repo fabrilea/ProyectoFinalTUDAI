@@ -2,17 +2,24 @@ package com.example.sistemadecomandas
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context.MODE_PRIVATE
 import android.content.Intent
 import android.os.Bundle
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintManager
+import android.util.Log
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.example.sistemadecomandas.model.Pedido
 import com.example.sistemadecomandas.model.Producto
+import com.example.sistemadecomandas.printer.PdfPrintAdapter
 import com.example.sistemadecomandas.repository.ProductoRepository
 import com.google.gson.Gson
 import java.io.File
+
 
 class PedidoActivity : AppCompatActivity() {
 
@@ -32,7 +39,6 @@ class PedidoActivity : AppCompatActivity() {
         nombreMesa = intent.getStringExtra("mesa") ?: "Mesa desconocida"
         esDelivery = intent.getBooleanExtra("es_delivery", false)
 
-
         val spinner = findViewById<Spinner>(R.id.spinnerCategoria)
         lista = findViewById(R.id.listaProductos)
         totalView = findViewById(R.id.totalPedido)
@@ -41,7 +47,8 @@ class PedidoActivity : AppCompatActivity() {
         btnConfirmar.isEnabled = false
 
         val categorias = ProductoRepository.obtenerCategorias()
-        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, categorias)
+        spinner.adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, categorias)
 
         spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, pos: Int, id: Long) {
@@ -77,22 +84,52 @@ class PedidoActivity : AppCompatActivity() {
                     }
                 }
 
-                val result = Intent().apply {
-                    putExtra("mesa", nombreMesa)
+                val resultIntent = Intent().apply {
                     putExtra("ocupada", true)
-                    putExtra("pedidos_json", gson.toJson(pedidos))
                 }
+                setResult(Activity.RESULT_OK, resultIntent)
                 prefs.edit().putString(nombreMesa, gson.toJson(acumulado)).apply()
 
-                setResult(Activity.RESULT_OK, result)
+
                 generarComandaPDF(pedidos)
-
-
-                finish()
             }
         }
 
     }
+
+
+    // Generar la comanda y pasar callback para finalizar actividad correctamente
+    private fun generarComandaPDF(pedidos: List<Pedido>) {
+        val fileName = "comanda_${nombreMesa.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
+        val file = File(getExternalFilesDir(null), fileName)
+        val document = android.graphics.pdf.PdfDocument()
+        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(300, 600, 1).create()
+        val page = document.startPage(pageInfo)
+        val canvas = page.canvas
+        val paint = android.graphics.Paint().apply { textSize = 12f }
+
+        canvas.drawText("COMANDA - $nombreMesa", 10f, 20f, paint)
+
+        var y = 40
+        for (p in pedidos) {
+            val line = "${p.nombre} x${p.cantidad} = $${p.precio * p.cantidad}"
+            canvas.drawText(line, 10f, y.toFloat(), paint)
+            y += 20
+        }
+
+        document.finishPage(page)
+        document.writeTo(file.outputStream())
+        document.close()
+
+        // Guardar nombre del archivo en SharedPreferences para reimpresión
+        getSharedPreferences("comandas_pdf", MODE_PRIVATE)
+            .edit()
+            .putString(nombreMesa, file.name)
+            .apply()
+
+        abrirPDF(file)
+    }
+
 
     private fun actualizarLista(categoria: String) {
         val productos = ProductoRepository.obtenerPorCategoria(categoria)
@@ -127,7 +164,14 @@ class PedidoActivity : AppCompatActivity() {
                 if (existente != null) {
                     existente.cantidad += picker.value
                 } else {
-                    pedidos.add(Pedido(producto.nombre, producto.precio, picker.value, producto.categoria))
+                    pedidos.add(
+                        Pedido(
+                            producto.nombre,
+                            producto.precio,
+                            picker.value,
+                            producto.categoria
+                        )
+                    )
                 }
                 actualizarTotal()
             }
@@ -139,37 +183,40 @@ class PedidoActivity : AppCompatActivity() {
         contenedorSeleccionados.removeAllViews()
         var total = 0.0
 
-        pedidos.sortedWith(compareBy({ it.categoria }, { it.nombre })).forEachIndexed { index, pedido ->
-            val fila = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(8, 8, 8, 8)
-            }
-
-            val txt = TextView(this).apply {
-                text = "[${pedido.categoria}] ${pedido.nombre} x${pedido.cantidad} = $${pedido.precio * pedido.cantidad}"
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val btnEditar = Button(this).apply {
-                text = "✏️"
-                setOnClickListener { mostrarDialogoEditar(pedido, index) }
-            }
-
-            val btnEliminar = Button(this).apply {
-                text = "🗑️"
-                setOnClickListener {
-                    pedidos.removeAt(index)
-                    actualizarTotal()
+        pedidos.sortedWith(compareBy({ it.categoria }, { it.nombre }))
+            .forEachIndexed { index, pedido ->
+                val fila = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(8, 8, 8, 8)
                 }
+
+                val txt = TextView(this).apply {
+                    text =
+                        "[${pedido.categoria}] ${pedido.nombre} x${pedido.cantidad} = $${pedido.precio * pedido.cantidad}"
+                    layoutParams =
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val btnEditar = Button(this).apply {
+                    text = "✏️"
+                    setOnClickListener { mostrarDialogoEditar(pedido, index) }
+                }
+
+                val btnEliminar = Button(this).apply {
+                    text = "🗑️"
+                    setOnClickListener {
+                        pedidos.removeAt(index)
+                        actualizarTotal()
+                    }
+                }
+
+                fila.addView(txt)
+                fila.addView(btnEditar)
+                fila.addView(btnEliminar)
+                contenedorSeleccionados.addView(fila)
+
+                total += pedido.precio * pedido.cantidad
             }
-
-            fila.addView(txt)
-            fila.addView(btnEditar)
-            fila.addView(btnEliminar)
-            contenedorSeleccionados.addView(fila)
-
-            total += pedido.precio * pedido.cantidad
-        }
 
         totalView.text = "Total: $${total}"
         btnConfirmar.isEnabled = pedidos.isNotEmpty()
@@ -200,49 +247,32 @@ class PedidoActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun generarComandaPDF(pedidos: List<Pedido>) {
-        val fileName = "comanda_${nombreMesa.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
-        val file = File(getExternalFilesDir(null), fileName)
-        val document = android.graphics.pdf.PdfDocument()
-        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(300, 600, 1).create()
-        val page = document.startPage(pageInfo)
-        val canvas = page.canvas
-        val paint = android.graphics.Paint().apply { textSize = 12f }
-
-        canvas.drawText("COMANDA - $nombreMesa", 10f, 20f, paint)
-
-        var y = 40
-        for (p in pedidos) {
-            val line = "${p.nombre} x${p.cantidad} = $${p.precio * p.cantidad}"
-            canvas.drawText(line, 10f, y.toFloat(), paint)
-            y += 20
-        }
-
-        document.finishPage(page)
-        document.writeTo(file.outputStream())
-        document.close()
-
-        // Guardar nombre del archivo en SharedPreferences para reimpresión
-        getSharedPreferences("comandas_pdf", MODE_PRIVATE)
-            .edit()
-            .putString(nombreMesa, file.name)
-            .apply()
-
-        abrirPDF(file)
-    }
 
     private fun abrirPDF(file: File) {
-        val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/pdf")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (!file.exists()) {
+            Toast.makeText(this, "El archivo no existe", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "No se encontró visor de PDF", Toast.LENGTH_LONG).show()
-        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
+        val printManager = getSystemService(PRINT_SERVICE) as PrintManager
+        val printAdapter: PrintDocumentAdapter = PdfPrintAdapter(this, uri)
+
+        val printJob = printManager.print("Comanda o Factura", printAdapter, PrintAttributes.Builder().build())
+
+        // Monitorear estado de impresión para cerrar la actividad SOLO cuando se complete o falle
+        Thread {
+            while (!printJob.isCompleted && !printJob.isCancelled && !printJob.isFailed) {
+                Thread.sleep(500)
+            }
+
+            runOnUiThread {
+                finish() // Se cierra después de que el usuario imprima o salga del diálogo
+            }
+        }.start()
     }
 
+
 }
+
+

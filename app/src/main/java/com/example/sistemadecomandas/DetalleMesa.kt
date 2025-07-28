@@ -10,12 +10,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.example.sistemadecomandas.model.Pedido
-import com.example.sistemadecomandas.utils.RegistroPagos
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
-import java.text.DecimalFormat
 import java.util.Locale
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintManager
+import com.example.sistemadecomandas.printer.PdfPrintAdapter
+import com.example.sistemadecomandas.utils.RegistroPagos
 
 class DetalleMesa : AppCompatActivity() {
 
@@ -55,15 +58,21 @@ class DetalleMesa : AppCompatActivity() {
                 val ocupada = result.data?.getBooleanExtra("ocupada", false) ?: false
                 estaOcupada = ocupada
                 txtEstado.text = if (ocupada) "Estado: Ocupada" else "Estado: Libre"
-                prefs.edit().putBoolean(nombreMesa, ocupada).apply()
+                getSharedPreferences("estado_mesas", MODE_PRIVATE).edit().putBoolean(nombreMesa, ocupada).apply()
+
                 mostrarPedidos()
                 verificarReimpresionComanda()
+
+                // Solo enviar resultado para que MainActivity sepa del cambio
                 setResult(RESULT_OK, Intent().apply {
                     putExtra("mesa", nombreMesa)
                     putExtra("ocupada", estaOcupada)
                 })
+                // Ya no uses finish() acá
             }
         }
+
+
 
         btnToggle.setOnClickListener {
             val intent = Intent(this, PedidoActivity::class.java)
@@ -72,10 +81,7 @@ class DetalleMesa : AppCompatActivity() {
             resultadoPedido.launch(intent)
         }
 
-        val prefsPedidos = getSharedPreferences("pedidos_mesas", MODE_PRIVATE)
-        val jsonPedidos = prefsPedidos.getString(nombreMesa, null)
 
-        btnCerrar.visibility = if (jsonPedidos.isNullOrEmpty()) View.GONE else View.VISIBLE
 
         btnCerrar.setOnClickListener {
             mostrarResumenYCerrar()
@@ -84,6 +90,7 @@ class DetalleMesa : AppCompatActivity() {
 
     private fun verificarReimpresionComanda() {
         btnReimprimir.visibility = if (!estaOcupada) View.GONE else View.VISIBLE
+        btnCerrar.visibility = if (!estaOcupada) View.GONE else View.VISIBLE
 
         if (!estaOcupada) return
 
@@ -95,16 +102,7 @@ class DetalleMesa : AppCompatActivity() {
 
         if (ultimaComanda != null) {
             btnReimprimir.setOnClickListener {
-                val uri = FileProvider.getUriForFile(this, "$packageName.provider", ultimaComanda)
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/pdf")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                try {
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "No se pudo abrir el visor de PDF", Toast.LENGTH_SHORT).show()
-                }
+                abrirPDF(ultimaComanda)
             }
         } else {
             btnReimprimir.visibility = View.GONE
@@ -153,7 +151,6 @@ class DetalleMesa : AppCompatActivity() {
         val pedidos = Gson().fromJson<List<Pedido>>(json, tipoLista)
 
         RegistroPagos.cargarDesdePreferencias(this)
-        val resumen = construirResumenFactura(pedidos)
         val total = pedidos.sumOf { it.precio * it.cantidad }
         val pagado = RegistroPagos.obtenerTotalPagado(nombreMesa)
         val pendiente = total - pagado
@@ -189,15 +186,10 @@ class DetalleMesa : AppCompatActivity() {
             addView(input)
         }
 
-        val formato = DecimalFormat("#,##2.0")
-        val totalStr = formato.format(total)
-        val pagadoStr = formato.format(pagado)
-        val pendienteStr = formato.format(pendiente)
-
         val resumenCompleto = buildString {
-            appendLine("💰 Total:     $${totalStr}\n")
-            appendLine("✅ Pagado:    $${pagadoStr}\n")
-            appendLine("⏳ Pendiente: $${pendienteStr}\n")
+            appendLine("💰 Total:     $${total}\n")
+            appendLine("✅ Pagado:    $${pagado}\n")
+            appendLine("⏳ Pendiente: $${pendiente}\n")
         }
 
         AlertDialog.Builder(this)
@@ -214,13 +206,20 @@ class DetalleMesa : AppCompatActivity() {
                 } else {
                     RegistroPagos.registrarPago(nombreMesa, metodo, monto)
                     RegistroPagos.guardarEnPreferencias(this)
-                    val nuevoPendiente = pendiente - monto
+                    // Recalcular valores actualizados
+                    val totalPagadoActual = RegistroPagos.obtenerTotalPagado(nombreMesa)
+                    val nuevoPendiente = total - totalPagadoActual
 
                     if (nuevoPendiente <= 0) {
-                        cerrarCuenta(resumen) // genera y abre la factura
+                        cerrarCuenta()
                     } else {
-                        Toast.makeText(this, "Pago parcial registrado. Restante: $${"%.2f".format(nuevoPendiente)}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this,
+                            "Pago parcial registrado. Restante: $${nuevoPendiente}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
+
                 }
             }
             .setNeutralButton("🧾 Reimprimir factura") { _, _ ->
@@ -234,14 +233,13 @@ class DetalleMesa : AppCompatActivity() {
 
 
 
-    private fun cerrarCuenta(resumenFactura: String) {
+    private fun cerrarCuenta() {
         val prefs = getSharedPreferences("pedidos_mesas", MODE_PRIVATE)
         val json = prefs.getString(nombreMesa, null)
 
         val tipoLista = object : TypeToken<List<Pedido>>() {}.type
         val pedidos = Gson().fromJson<List<Pedido>>(json, tipoLista)
 
-        generarFacturaPDF(nombreMesa, resumenFactura)
 
         guardarPedidosEnResumen(pedidos)
 
@@ -288,14 +286,6 @@ class DetalleMesa : AppCompatActivity() {
         return builder.toString()
     }
 
-    private fun guardarResumenComoArchivo(nombreMesa: String, resumen: String) {
-        val timeStamp = java.text.SimpleDateFormat("HHmm", java.util.Locale.getDefault()).format(java.util.Date())
-        val fileName = "factura_${nombreMesa.replace(" ", "_")}_$timeStamp.pdf"
-        openFileOutput(fileName, MODE_PRIVATE).use {
-            it.write(resumen.toByteArray())
-        }
-        Toast.makeText(this, "Resumen guardado como $fileName", Toast.LENGTH_SHORT).show()
-    }
 
     private fun generarFacturaPDF(nombreMesa: String, resumen: String) {
         val fileName = "factura_${nombreMesa.replace(" ", "_")}.pdf"
@@ -318,16 +308,26 @@ class DetalleMesa : AppCompatActivity() {
     }
 
     private fun abrirPDF(file: File) {
-        val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/pdf")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (!file.exists()) {
+            Toast.makeText(this, "El archivo no existe", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "No se encontró visor de PDF", Toast.LENGTH_LONG).show()
-        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
+        val printManager = getSystemService(PRINT_SERVICE) as PrintManager
+        val printAdapter: PrintDocumentAdapter = PdfPrintAdapter(this, uri)
+
+        val printJob = printManager.print("Comanda o Factura", printAdapter, PrintAttributes.Builder().build())
+
+        // Monitorear estado de impresión para cerrar la actividad SOLO cuando se complete o falle
+        Thread {
+            while (!printJob.isCompleted && !printJob.isCancelled && !printJob.isFailed) {
+                Thread.sleep(500)
+            }
+
+            runOnUiThread {
+                finish() // Se cierra después de que el usuario imprima o salga del diálogo
+            }
+        }.start()
     }
 }
