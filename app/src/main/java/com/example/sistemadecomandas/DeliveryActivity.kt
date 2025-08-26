@@ -108,7 +108,7 @@ class DeliveryActivity : AppCompatActivity() {
         resumen.append("\nTOTAL: $${total}")
 
         guardarDeliveryEnResumen(total)
-        generarPDFDelivery(resumen.toString(), nombre)
+        generarPDFDelivery(nombre = nombre, telefono = numero, pedidos = pedidos)
 
         getSharedPreferences("estado_deliveries", MODE_PRIVATE)
             .edit().putBoolean("hay_deliveries", true).apply()
@@ -124,39 +124,131 @@ class DeliveryActivity : AppCompatActivity() {
         prefs.edit().putString("delivery", actualizado).apply()
     }
 
-    private fun generarPDFDelivery(resumen: String, nombre: String) {
-        val hora = SimpleDateFormat("HHmmss", Locale.getDefault()).format(Date())
-        val fileName = "delivery_${nombre.replace(" ", "_")}_$hora.pdf"
+    private fun generarPDFDelivery(nombre: String, telefono: String, pedidos: List<Pedido>) {
+        fun mmToPt(mm: Float): Int = ((mm / 25.4f) * 72f).toInt()
+
+        data class Row(val cant: Int, val desc: String)
+        val items = pedidos.map { Row(it.cantidad, it.nombre) }
+            .ifEmpty { listOf(Row(1, "(sin detalle)")) }
+
+        // --- Medidas térmica 80mm (72mm útiles) ---
+        val PAGE_WIDTH_PT = mmToPt(72f)       // ≈ 204 pt
+        val MARGIN_PT = mmToPt(2f)            // ≈ 5 pt
+        val CONTENT_W_PT = PAGE_WIDTH_PT - MARGIN_PT * 2
+
+        // Columnas: Cant (18%) | Desc (82%)
+        val cantColW = (CONTENT_W_PT * 0.18f).toInt()
+        val descColW = CONTENT_W_PT - cantColW
+
+        // --- Tipografías ---
+        val titleTP = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+        }
+        val bodyTP = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 9f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.NORMAL)
+        }
+        val boldTP = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 9f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+        }
+        val smallTP = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 8.5f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.NORMAL)
+        }
+        val rulePaint = android.graphics.Paint().apply { strokeWidth = 1f; isAntiAlias = true }
+
+        fun layout(t: CharSequence, tp: android.text.TextPaint, w: Int, a: android.text.Layout.Alignment) =
+            android.text.StaticLayout.Builder.obtain(t, 0, t.length, tp, w)
+                .setAlignment(a)
+                .setIncludePad(false)
+                .build()
+
+        val horaStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val titleL = layout("DELIVERY - ${nombre.uppercase()}", titleTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_CENTER)
+        val telL   = layout("Tel: ${telefono.ifBlank { "(no informado)" }}", bodyTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_NORMAL)
+        val horaL  = layout("Hora: $horaStr", bodyTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_OPPOSITE)
+
+        val GAP = 4f
+        val RULE_SP = 6f
+        var totalH = 0f
+
+        // Medición
+        totalH += titleL.height + GAP
+        totalH += maxOf(telL.height, horaL.height) + GAP
+
+        val headCantL = layout("Cant", boldTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+        val headDescL = layout("Descripción", boldTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+        val headH = maxOf(headCantL.height, headDescL.height)
+        totalH += headH + GAP + 1 + RULE_SP
+
+        items.forEach { r ->
+            val cL = layout(r.cant.toString(), bodyTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+            val dL = layout(r.desc, bodyTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+            totalH += maxOf(cL.height, dL.height) + GAP
+        }
+        totalH += 1 + RULE_SP
+
+        val footL = layout("Gracias", smallTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_CENTER)
+        totalH += footL.height
+
+        val PAGE_HEIGHT_PT = (totalH + MARGIN_PT * 2).toInt().coerceAtLeast(mmToPt(90f))
+
+        // --- Crear PDF ---
+        val fileName = "delivery_${nombre.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
         val file = File(getExternalFilesDir(null), fileName)
 
         val document = android.graphics.pdf.PdfDocument()
-        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(300, 600, 1).create()
+        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(PAGE_WIDTH_PT, PAGE_HEIGHT_PT, 1).create()
         val page = document.startPage(pageInfo)
         val canvas = page.canvas
-        val paint = android.graphics.Paint().apply { textSize = 12f }
 
-        val lines = resumen.split("\n")
-        var y = 20
-        for (line in lines) {
-            canvas.drawText(line, 10f, y.toFloat(), paint)
-            y += 20
+        var y = MARGIN_PT.toFloat()
+        fun rule() {
+            canvas.drawLine(MARGIN_PT.toFloat(), y, (PAGE_WIDTH_PT - MARGIN_PT).toFloat(), y, rulePaint)
+            y += RULE_SP
         }
+
+        // Encabezado
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); titleL.draw(canvas); canvas.restore()
+        y += titleL.height + GAP
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); telL.draw(canvas); canvas.restore()
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); horaL.draw(canvas); canvas.restore()
+        y += maxOf(telL.height, horaL.height) + GAP
+
+        // Tabla
+        var x = MARGIN_PT.toFloat()
+        canvas.save(); canvas.translate(x, y); headCantL.draw(canvas); canvas.restore()
+        x += cantColW
+        canvas.save(); canvas.translate(x, y); headDescL.draw(canvas); canvas.restore()
+        y += headH + GAP; rule()
+
+        items.forEach { r ->
+            x = MARGIN_PT.toFloat()
+            val cL = layout(r.cant.toString(), bodyTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+            val dL = layout(r.desc, bodyTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+            val rowH = maxOf(cL.height, dL.height)
+
+            canvas.save(); canvas.translate(x, y); cL.draw(canvas); canvas.restore()
+            x += cantColW
+            canvas.save(); canvas.translate(x, y); dL.draw(canvas); canvas.restore()
+
+            y += rowH + GAP
+        }
+        rule()
+
+        // Footer
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); footL.draw(canvas); canvas.restore()
 
         document.finishPage(page)
         document.writeTo(file.outputStream())
         document.close()
 
-        // 🔹 Guardar en delivery_historial
-        val total = resumen.lines().lastOrNull()?.removePrefix("TOTAL: $")?.toIntOrNull() ?: 0
-        val deliveryString = "$fileName-$$total"
-
-        val prefs = getSharedPreferences("delivery_historial", MODE_PRIVATE)
-        val existingSet = prefs.getStringSet("historial", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
-        existingSet.add(deliveryString)
-        prefs.edit().putStringSet("historial", existingSet).apply()
-
         abrirPDF(file)
     }
+
+
 
     private fun abrirPDF(file : File){
         if (!file.exists()) {

@@ -29,7 +29,7 @@
             android:layout_width="match_parent"
             android:layout_height="139dp"
             android:layout_margin="10dp"
-            android:text="Ir a sistema de mesas"
+            android:text="Sistema de mesas"
             android:textSize="18sp"
             app:cornerRadius="20dp"
             android:textColor="@android:color/black"
@@ -41,7 +41,7 @@
             android:layout_height="139dp"
             android:layout_margin="10dp"
             android:backgroundTint="@color/lightGreen"
-            android:text="Pedir Delivery"
+            android:text="Pedir delivery"
             android:textColor="@android:color/black"
             android:textSize="18sp"
             app:cornerRadius="20dp" />

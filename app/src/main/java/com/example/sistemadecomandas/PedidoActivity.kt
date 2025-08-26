@@ -4,10 +4,13 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context.MODE_PRIVATE
 import android.content.Intent
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Bundle
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintManager
+import android.text.TextPaint
 import android.util.Log
 import android.view.View
 import android.widget.*
@@ -98,37 +101,141 @@ class PedidoActivity : AppCompatActivity() {
     }
 
 
-    // Generar la comanda y pasar callback para finalizar actividad correctamente
+    // Genera COMANDA 80mm (vertical), altura dinámica, sin precios
     private fun generarComandaPDF(pedidos: List<Pedido>) {
-        val fileName = "comanda_${nombreMesa.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
+        fun mmToPt(mm: Float): Int = ((mm / 25.4f) * 72f).toInt()
+
+        // --- Datos base ---
+        val mesa = nombreMesa
+        val ahora = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+
+        val PAGE_WIDTH_PT = mmToPt(72f)   // ancho real de impresión ≈ 204 pt
+        val MARGIN_PT = mmToPt(2f)        // márgenes chicos ≈ 5 pt
+        val CONTENT_W_PT = PAGE_WIDTH_PT - MARGIN_PT * 2
+
+// Columnas
+        val cantColW = (CONTENT_W_PT * 0.15f).toInt()
+        val descColW = CONTENT_W_PT - cantColW
+
+// Tipos de letra
+        val titleTP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 11f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        }
+        val bodyTP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 8.5f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+        }
+        val boldTP = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 8.5f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        }
+
+        val smallTP = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 8.5f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.NORMAL)
+        }
+        val rulePaint = android.graphics.Paint().apply { strokeWidth = 1f; isAntiAlias = true }
+
+        fun layout(text: CharSequence, tp: android.text.TextPaint, w: Int, align: android.text.Layout.Alignment) =
+            android.text.StaticLayout.Builder
+                .obtain(text, 0, text.length, tp, w)
+                .setAlignment(align)
+                .setIncludePad(false)
+                .build()
+
+        // --- Encabezados ---
+        val titleL = layout("COMANDA - ${mesa.uppercase()}", titleTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_CENTER)
+        val dateL  = layout("Hora: $ahora", bodyTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_OPPOSITE)
+
+        // --- Medición de altura total (exacta) ---
+        val GAP = 4f
+        val RULE_SP = 6f
+        var totalH = 0f
+
+        totalH += titleL.height + GAP + 1 + RULE_SP
+        totalH += dateL.height + GAP
+
+        // Encabezado de tabla
+        val headCantL = layout("Cant", boldTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+        val headDescL = layout("Descripción", boldTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+        val headH = maxOf(headCantL.height, headDescL.height)
+        totalH += headH + GAP + 1 + RULE_SP
+
+        // Filas: usamos la lista recibida (sin precios)
+        pedidos.forEach { p ->
+            val cL = layout(p.cantidad.toString(), bodyTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+            val dL = layout(p.nombre, bodyTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+            totalH += maxOf(cL.height, dL.height) + GAP
+        }
+        totalH += 1 + RULE_SP
+
+        // Pie
+        val footL = layout("Preparar y enviar a mesa", smallTP, CONTENT_W_PT, android.text.Layout.Alignment.ALIGN_CENTER)
+        totalH += footL.height
+
+        val PAGE_HEIGHT_PT = (totalH + MARGIN_PT * 2).toInt().coerceAtLeast(mmToPt(90f))
+
+        // --- Crear PDF y dibujar ---
+        val fileName = "comanda_${mesa.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
         val file = File(getExternalFilesDir(null), fileName)
+
         val document = android.graphics.pdf.PdfDocument()
-        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(300, 600, 1).create()
+        val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(PAGE_WIDTH_PT, PAGE_HEIGHT_PT, 1).create()
         val page = document.startPage(pageInfo)
         val canvas = page.canvas
-        val paint = android.graphics.Paint().apply { textSize = 12f }
 
-        canvas.drawText("COMANDA - $nombreMesa", 10f, 20f, paint)
-
-        var y = 40
-        for (p in pedidos) {
-            val line = "${p.nombre} x${p.cantidad} = $${p.precio * p.cantidad}"
-            canvas.drawText(line, 10f, y.toFloat(), paint)
-            y += 20
+        var y = MARGIN_PT.toFloat()
+        fun rule() {
+            canvas.drawLine(MARGIN_PT.toFloat(), y, (PAGE_WIDTH_PT - MARGIN_PT).toFloat(), y, rulePaint)
+            y += RULE_SP
         }
+
+        // Título
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); titleL.draw(canvas); canvas.restore()
+        y += titleL.height + GAP; rule()
+
+        // Hora
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); dateL.draw(canvas); canvas.restore()
+        y += dateL.height + GAP
+
+        // Encabezado de tabla
+        var x = MARGIN_PT.toFloat()
+        canvas.save(); canvas.translate(x, y); headCantL.draw(canvas); canvas.restore()
+        x += cantColW
+        canvas.save(); canvas.translate(x, y); headDescL.draw(canvas); canvas.restore()
+        y += headH + GAP; rule()
+
+        // Filas
+        pedidos.forEach { p ->
+            x = MARGIN_PT.toFloat()
+            val cL = layout(p.cantidad.toString(), bodyTP, cantColW, android.text.Layout.Alignment.ALIGN_CENTER)
+            val dL = layout(p.nombre, bodyTP, descColW, android.text.Layout.Alignment.ALIGN_NORMAL)
+            val rowH = maxOf(cL.height, dL.height)
+
+            canvas.save(); canvas.translate(x, y); cL.draw(canvas); canvas.restore()
+            x += cantColW
+            canvas.save(); canvas.translate(x, y); dL.draw(canvas); canvas.restore()
+            y += rowH + GAP
+        }
+        rule()
+
+        // Pie
+        canvas.save(); canvas.translate(MARGIN_PT.toFloat(), y); footL.draw(canvas); canvas.restore()
 
         document.finishPage(page)
         document.writeTo(file.outputStream())
         document.close()
 
-        // Guardar nombre del archivo en SharedPreferences para reimpresión
+        // Guardá el nombre para reimpresión (si querés seguir usándolo)
         getSharedPreferences("comandas_pdf", MODE_PRIVATE)
             .edit()
-            .putString(nombreMesa, file.name)
+            .putString(mesa, file.name)
             .apply()
 
         abrirPDF(file)
     }
+
 
 
     private fun actualizarLista(categoria: String) {
